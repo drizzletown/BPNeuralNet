@@ -5,6 +5,7 @@
 #include <vector>
 #include <Eigen>
 #include <iostream>
+#include <chrono>
 using namespace Eigen;
 using namespace std;
 
@@ -14,6 +15,7 @@ typedef Matrix<double, Dynamic, 1> Vector_xd;
 typedef std::tr1::ranlux64_base_01 MyEng; 
 typedef std::normal_distribution<double> MyNormDist; 
 typedef std::uniform_real_distribution<double> MyUnifDist; 
+
 
 enum ActFunctionType { SIGMOD, RELU, TANH, IDENTITY };
 namespace ActFunction {
@@ -65,18 +67,21 @@ namespace ActFunction {
 
 
 typedef Vector_xd(*PtrActFunction)(const Vector_xd& vec);
-
+enum TrainingType { Stochastic, Batched, MiniBatched };
 class NeuralNet
-{
-	
+{	
 public:
 	NeuralNet() { 
 		epoch = 10000;  
 		learning_rate = 0.005; 
 		loss_threshold = 0.001;
 		trainingNum = -1;
+		trainingType = TrainingType::MiniBatched;
+		actFuncType = ActFunctionType::TANH;
 	}
 
+#pragma region 训练&预测
+public:
 	void pred(const vector<Vector_xd>& x, vector<Vector_xd>& prd) {
 		for (int j = 0; j < x.size(); j++) {
 			setInputLayer(x[j]);
@@ -86,26 +91,45 @@ public:
 		}
 	}
 
+	void training(const vector<Vector_xd>& x, const vector<Vector_xd>& target) {
+		switch (trainingType)
+		{
+		case Stochastic:
+			stochasticTraining(x, target);
+			break;
+		case Batched:
+			batchedTraining(x, target);
+			break;
+		case MiniBatched:
+			miniBatchedTraining(x, target);
+			break;
+		default:
+			miniBatchedTraining(x, target);
+			break;
+		}
+	}
+private:
+
 	//全批量训练
 	void batchedTraining(const vector<Vector_xd>& x, const vector<Vector_xd>& target) {
-	}
-	//随机批量训练
-	void miniBatchedTraining(const vector<Vector_xd>& x, const vector<Vector_xd>& target) {
-	}
-	//在线训练
-	void stochasticTraining(const vector<Vector_xd>& x, const vector<Vector_xd>& target) {
 		double oError = 0.0;
-		for(int i=0; i<epoch; i++) {
+		for (int i = 0; i < epoch; i++) {
 			double tError = 0.0;
-			for(int j =0; j<x.size(); j++) {
+
+			vector<Matrix_xd> del_w(w);
+			zeroWeight(del_w);
+			vector<Vector_xd> del_b(b);
+			zeroBias(del_b);
+			for (int j = 0; j < x.size(); j++) {
 				setInputLayer(x[j]);
 				goAhead();
 				double loss = calcDelta(target[j]);
 				tError += loss;
 				if (loss < loss_threshold) continue;
-				goBack();			
+				batchedCalcWeight(del_w, del_b);
 			}
-			cout << "训练遍数：" <<i << endl;
+			batchedUpdateWeight(del_w, del_b, x.size());
+			cout << "训练遍数：" << i << endl;
 			cout << "总体误差：" << tError << endl;
 			if (tError < loss_threshold) break;
 			if (fabs(tError - oError) < 1e-10) break;
@@ -113,10 +137,74 @@ public:
 		}
 	}
 
-	
+	//小批量训练
+	void miniBatchedTraining(const vector<Vector_xd>& x, const vector<Vector_xd>& target) {
+		double oError = 0.0;
+		int batch_size = 32;
+		for (int i = 0; i < epoch; i++) {
+			double tError = 0.0;
+
+			vector<int> randperm;
+			for (int i = 0; i < x.size(); i++) randperm.push_back(i);
+			unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+			std::shuffle(randperm.begin(), randperm.end(), std::default_random_engine(seed));
+
+			int batch = 0;
+			while (batch < x.size()) {
+				vector<Matrix_xd> del_w(w); zeroWeight(del_w);
+				vector<Vector_xd> del_b(b); zeroBias(del_b);
+				int istop = (batch + batch_size < x.size()) ? batch + batch_size : x.size();
+				for (int j = batch; j < istop; j++) {
+					setInputLayer(x[randperm[j]]);
+					goAhead();
+					double loss = calcDelta(target[randperm[j]]);
+					tError += loss;
+					if (loss < loss_threshold) continue;
+					batchedCalcWeight(del_w, del_b);
+				}
+				batchedUpdateWeight(del_w, del_b, batch_size);
+				batch += batch_size;
+			}
+			cout << "训练遍数：" << i << endl;
+			cout << "总体误差：" << tError << endl;
+			if (tError < loss_threshold) break;
+			if (fabs(tError - oError) < 1e-10) break;
+			oError = tError;
+		}
+	}
+
+
+	//随机训练
+	void stochasticTraining(const vector<Vector_xd>& x, const vector<Vector_xd>& target) {
+		double oError = 0.0;
+		for (int i = 0; i < epoch; i++) {
+			double tError = 0.0;
+
+			vector<int> randperm;
+			for (int i = 0; i < x.size(); i++) randperm.push_back(i);
+			unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+			std::shuffle(randperm.begin(), randperm.end(), std::default_random_engine(seed));
+
+			for (int j = 0; j < x.size(); j++) {
+				setInputLayer(x[randperm[j]]);
+				goAhead();
+				double loss = calcDelta(target[randperm[j]]);
+				tError += loss;
+				if (loss < loss_threshold) continue;
+				updateWeight();
+			}
+			cout << "训练遍数：" << i << endl;
+			cout << "总体误差：" << tError << endl;
+			if (tError < loss_threshold) break;
+			if (fabs(tError - oError) < 1e-10) break;
+			oError = tError;
+		}
+	}
+
+
 
 	void goAhead() {
-		for(int i=0; i<neuronNums.size()-1; i++) {
+		for (int i = 0; i < neuronNums.size() - 1; i++) {
 			int layer = i + 1;
 			PtrActFunction paf = getActFunction();
 			Vector_xd vec = getWeight(layer).transpose()*getLayer(i) + getBias(layer);
@@ -125,42 +213,57 @@ public:
 	}
 
 
-	void goBack() {
-		updateWeight();
-	}
 
 	double calcDelta(const Vector_xd& tk) {
 		//计算输出层delta
 		Vector_xd& ok = getOutput();
-		double loss = (tk - ok).dot(tk - ok)/(2*tk.size());
+		double loss = (tk - ok).dot(tk - ok) / (2 * tk.size());
 		//delta[delta.size()-1] = ok.array()*(1.0-ok.array())*(tk-ok).array();
 		delta[delta.size() - 1] = getDActFunction()(ok).array()*(tk - ok).array();
-		
+
 		//计算隐层delta
-		for(int i=layers.size()-2; i>=1; i--) {
+		for (int i = layers.size() - 2; i >= 1; i--) {
 			Vector_xd& oh = getLayer(i);
 			//Vector_xd ohdev = oh.array()*(1.0-oh.array());
 			Vector_xd ohdev = getDActFunction()(oh);
-			Vector_xd sumdelta = getWeight(i+1)*getDelta(i+1);
+			Vector_xd sumdelta = getWeight(i + 1)*getDelta(i + 1);
 			getDelta(i) = ohdev.array()*sumdelta.array();
 		}
 		return loss;
-	}	
+	}
+
+
 
 	void updateWeight() {
 		//Delta{wji} = mu * Delta_j * x_ji
 		//wji = wji + Delta{wji}
 		for (int i = 1; i < layers.size(); i++) {
-			getWeight(i) += learning_rate * getLayer(i-1) * getDelta(i).transpose();
+			getWeight(i) += learning_rate * getLayer(i - 1) * getDelta(i).transpose();
 			getBias(i) += learning_rate * getDelta(i);
 		}
 	}
 
+	void batchedCalcWeight(vector<Matrix_xd>& del_w, vector<Vector_xd> del_b) {
+		for (int i = 1; i < layers.size(); i++) {
+			del_w[i - 1] += learning_rate * getLayer(i - 1) * getDelta(i).transpose();
+			del_b[i - 1] += learning_rate * getDelta(i);
+		}
+	}
+	void batchedUpdateWeight(vector<Matrix_xd>& del_w, vector<Vector_xd> del_b, int bsize) {
+		for (int i = 1; i < layers.size(); i++) {
+			getWeight(i) += del_w[i - 1] / bsize;
+			getBias(i) += del_b[i - 1] / bsize;
+		}
+	}
+
+#pragma endregion
+
 #pragma region 激活函数
+public:
 	void setActFunctionType(ActFunctionType aft) {
 		actFuncType = aft;
 	}
-
+private:
 	PtrActFunction getActFunction() {
 		switch (actFuncType)
 		{
@@ -201,57 +304,10 @@ public:
 			break;
 		}
 	}
-
-	Vector_xd sigmod(Vector_xd& vec) {
-		Vector_xd sigvec = vec;
-		sigvec = -sigvec;
-		sigvec = sigvec.array().exp();
-		sigvec = sigvec.array() + 1.0;
-		sigvec = 1.0 / sigvec.array();
-		return sigvec;
-	}
-	Vector_xd dsigmod(Vector_xd& fx) {
-		return fx.array()*(1.0 - fx.array());
-	}
-
-	Vector_xd tanh(Vector_xd& vec) {
-		Vector_xd tanhvec = vec.array() * 2;
-		tanhvec = 2 * sigmod(tanhvec).array() - 1;
-		return tanhvec;
-	}
-	Vector_xd dtanh(Vector_xd& fx) {
-		return (1.0 - fx.array()*fx.array());
-	}
-
-	Vector_xd ReLU(Vector_xd& vec) {
-		Vector_xd reluvec = vec;
-		for (int i = 0; i < reluvec.size(); i++)
-			if (reluvec(i) < 0) reluvec(i) = 0;
-		return reluvec;
-	}
-	Vector_xd dReLU(Vector_xd& fx) {
-		Vector_xd dreluvec = fx;
-		for (int i = 0; i < dreluvec.size(); i++)
-			if (dreluvec(i) < 0) dreluvec(i) = 0;
-			else dreluvec(i) = 1;
-		return dreluvec;
-	}
-
-	Vector_xd identity(Vector_xd& vec) {
-		Vector_xd reluvec = vec;
-		return reluvec;
-	}
-	Vector_xd didentity(Vector_xd& fx) {
-		Vector_xd divec = fx;
-		divec.setOnes();
-		return divec;
-	}
-
 #pragma endregion
 
-
-
 #pragma region 打印输出
+private:
 	void printvec(Vector_xd v) const {
 		for (int i = 0; i < v.size(); i++)
 			cout << v(i) << " ";
@@ -303,7 +359,7 @@ public:
 #pragma endregion
 	   	 
 #pragma region 初始化
-
+public:
 	void initNet(vector<int> neuronNums) {
 		this->neuronNums = neuronNums;
 		int layer1Num, layer2Num;
@@ -331,7 +387,17 @@ public:
 		initWeights();
 	}
 
-
+private:
+	void zeroWeight(vector<Matrix_xd>& del_w) {
+		for (int i = 0; i < del_w.size(); i++) {
+			del_w[i].setZero();
+		}
+	}
+	void zeroBias(vector<Vector_xd>& del_b) {
+		for (int i = 0; i < del_b.size(); i++) {
+			del_b[i].setZero();
+		}
+	}
 
 	void initBias() {
 		for (int i = 0; i < b.size(); i++) {
@@ -358,18 +424,17 @@ public:
 #pragma endregion
 		
 #pragma region Getters & Setters
+public:
 	void setTrainNum(int n) { trainingNum = n; }
-
-	void setInputLayer(Vector_xd x) {
-		layers[0] = x;
-	}
-
 	void setEpoch(int ep) { epoch = ep; }
 	void setLearningRate(double rt) { learning_rate = rt; }
 	void setLossThreshold(double th) { loss_threshold = th; }
-	
+	void setTrainingType(TrainingType tp) { trainingType = tp; }
 
-
+private:
+	void setInputLayer(Vector_xd x) {
+		layers[0] = x;
+	}
 	Vector_xd& getOutput() {
 		return layers.back();
 	}
@@ -398,6 +463,7 @@ public:
 private:
 	int trainingNum;
 	ActFunctionType actFuncType;
+	TrainingType trainingType;
 	int epoch;
 	double loss_threshold;
 	double learning_rate; 

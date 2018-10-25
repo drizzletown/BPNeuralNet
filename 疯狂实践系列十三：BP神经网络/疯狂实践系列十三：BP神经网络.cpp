@@ -9,9 +9,6 @@
 using namespace Eigen;
 using namespace std;
 
-void printvec(Vector_xd v);
-void printmtx(Matrix_xd m);
-
 int _tmain(int argc, _TCHAR* argv[])
 {
 	vector<int> layer_neuron_num = {2,10,1};
@@ -41,7 +38,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	}
 	
 	nn.setTrainNum(num);
-	nn.stochasticTraining(x, target);
+	nn.training(x, target);
 
 	vector<Vector_xd> prd;
 	nn.pred(x, prd);
@@ -74,13 +71,3 @@ int _tmain(int argc, _TCHAR* argv[])
 	return 0;
 }
 
-
-void printvec(Vector_xd v) {
-	for (int i = 0; i < v.size(); i++)
-		cout << v(i) << " ";
-	cout << endl;
-}
-
-void printmtx(Matrix_xd m) {
-	cout << m << endl;
-}
