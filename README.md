@@ -7,15 +7,11 @@ date:   2018-01-23 22:08:00 +0800
 #大类配置
 categories: document
 #小类配置
-tag: 教程
+tag: 使用说明
 ---
 
-* content
-{:toc}
-
-
 # BPNeuralNet
-BP神经网络的C++实现（Visual Studio 2017），支持多种激活函数，支持随机、批量、小批量训练
+- BP神经网络的C++实现（Visual Studio 2017），支持多种激活函数，支持随机、批量、小批量训练
 
 #使用方法：
 ##1. 定义神经网络各层的神经元个数
