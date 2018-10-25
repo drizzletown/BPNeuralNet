@@ -1,3 +1,19 @@
+---
+layout: post
+#标题配置
+title:  Python学习与写作计划
+#时间配置
+date:   2018-01-23 22:08:00 +0800
+#大类配置
+categories: document
+#小类配置
+tag: 教程
+---
+
+* content
+{:toc}
+
+
 # BPNeuralNet
 BP神经网络的C++实现（Visual Studio 2017），支持多种激活函数，支持随机、批量、小批量训练
 
